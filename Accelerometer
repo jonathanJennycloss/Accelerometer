@@ -1,0 +1,148 @@
+#include "mbed.h"
+#include "ADXL362.h"
+#include "math.h"
+#include"stdlib.h"
+
+/* Constants */
+#define HIGH 1
+#define LOW 0
+
+LocalFileSystem local("local");
+
+/* Declaration of serial device */
+Serial pc(USBTX, USBRX);
+
+/* Declaration of accelerometer object (mosi, miso, sclk, cs) */
+ADXL362 adxl362(p11, p12, p13, p10);
+
+/* Declaration of the on-board LEDs 1, 2, 3 and 4.*/
+DigitalOut ledA(LED1);
+DigitalOut ledB(LED2);
+DigitalOut ledC(LED3);
+DigitalOut ledD(LED4);
+
+/* Informing compiler of the functions used. */
+void menu_change(int opt, int *N, float *T);
+void Angle_calcs(int8_t xvals, int8_t yvals, int8_t zvals, float *x_Angl, float *y_Angl);
+void lights(int xAngle, int yAngle);
+
+int main(){
+    int option; // User's option is stored in this variable. Can't use switch on a float variable.
+    /* n is the number of sample readings and t is the time interval between readings*/
+    int n;
+    float t;
+    int8_t xdata, ydata, zdata; // Variables which collect the acceleration values from the accelerometer.
+    float x_accAng, y_accAng; // The x and y angles are stored under these variables.
+    int counts;
+
+    /*Set up SPI interface*/
+    adxl362.init_spi();
+    /*Set up accelerometer*/
+    adxl362.init_adxl362();
+    wait(0.1); //Need to wait 0.1s for device to initialise
+    pc.printf("Device initialised!\n");
+
+    /*This loop will run repeatedly.*/
+    while(1){
+     /*Print a menu*/
+     pc.printf("\n\n\t\t||||||||||||||||||||||||||||||||||||||\n");
+     pc.printf("\t\tProgram to take readings of tilt angles\n");
+     pc.printf("\t\t||||||||||||||||||||||||||||||||||||||\n");
+     pc.printf("\nINSTUCTIONS: If the x angle is not within -10 and 10 degrees, the first and second LED lights up.\n");
+     pc.printf("If the y angle is not within -10 and 10 degrees, the third and fourth LEDs lights up.\n");
+     pc.printf("If both the the x and y angles are not within -10 and 10 degrees, the all four LED lights up.\n");
+     pc.printf("\n\t\t||||||||||||||||||||||||||||||||||||||\n");
+     pc.printf("1: Use default parameters\n");
+     pc.printf("2: Choose the number of readings and the time interval\n");
+     pc.printf("3: Exit the program\n");
+     pc.scanf("%i", &option);
+
+     FILE *newFile;
+     newFile = fopen("D:\readings.txt", "a+");
+     //Opens the file for reading and writing. New data is added to the end of the file.
+     menu_change(option, &n, &t);
+            for (counts = 0; counts < n; counts ++) // Take 'n' number of readings.
+    {
+        adxl362.ACC_GetXYZ8(&xdata, &ydata, &zdata); //Get readings from accelerometer
+        wait(t);
+        Angle_calcs(xdata, ydata, zdata, &x_accAng, &y_accAng); //Calculates the x and y angles.
+        pc.printf("\n  X    Y     Z     x_Angle     y_Angle");
+        pc.printf("\n%+d   %+d   %+d   %+f  %+f\n", xdata, ydata, zdata, x_accAng, y_accAng);
+        //fputs("\n  X    Y     Z     x_Angle     y_Angle", newFile); // Puts the string in the file.
+        //fprintf(newFile, "\n%+d   %+d   %+d   %+f  %+f\n", xdata, ydata, zdata, x_accAng, y_accAng);
+        lights(x_accAng, y_accAng); // The LEDS will light up according to the angle inputs.
+        continue;
+    }
+    fclose(newFile);
+    }
+    }
+
+    /* Function displaying the menu. */
+    void menu_change(int opt, int *N, float *T){
+        switch(opt)
+    {
+        case(1):
+        pc.printf("\nProceeding...\n");
+        *N = 50;
+        *T = 0.1;
+        break;
+        //readings(&N, &T);
+
+        case(2):
+        pc.printf("\nProceeding...\n");
+        pc.printf("\n\nHow many sample readings would you like to take?\n");
+        pc.scanf("%i", &*N); //Get user input from the PuTTY terminal for the number of readings.
+        pc.printf("\nWhat time interval, in seconds, between readings would you like?\n");
+        pc.scanf("%f", &*T); //Get user input from the PuTTY terminal for the time interval.
+        break;
+
+        case(3):
+        pc.printf("\nExiting the program\n");
+        *N = 0;
+
+        default:
+        pc.printf("\nPlease enter a valid command\n");
+        *N = 0;
+        }
+    }
+
+    /* Function for calculating the x and y angles. */
+    void Angle_calcs(int8_t xvals, int8_t yvals, int8_t zvals, float *x_Angl, float *y_Angl){
+        // local variables
+    float srootX, srootY, denX, denY;
+    /* radTdeg is the conversion factor to get angle from radians to degrees */
+    float radTdeg = 180/3.14159;
+    /* denX and denY are part of the denominator for the angle calculations. */
+    denX = (yvals*yvals)+(zvals*zvals);
+    denY = (xvals*xvals)+(zvals*zvals);
+    srootX = sqrt(denX);
+    srootY = sqrt(denY);
+
+    *x_Angl = radTdeg*atan(xvals/srootX);
+    *y_Angl = radTdeg*atan(yvals/srootY);
+    }
+
+    /* Function which determines when the LEDS light up. */
+    void lights(int xAngle, int yAngle){
+        if ((xAngle > 10 || xAngle < -10) && (yAngle  > 10 || yAngle < -10)){
+        ledA = HIGH;
+        ledB = HIGH;
+        ledC = HIGH;
+        ledD = HIGH;
+    }else if (xAngle > 10 || xAngle < -10){
+        ledA = HIGH;
+        ledB = HIGH;
+        ledC = LOW;
+        ledD = LOW;
+    }else if (yAngle > 10 || yAngle < -10){
+        ledA = LOW;
+        ledB = LOW;
+        ledC = HIGH;
+        ledD = HIGH;
+    }else {
+        ledA = LOW;
+        ledB = LOW;
+        ledC = LOW;
+        ledD = LOW;
+        }
+    }
